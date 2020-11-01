@@ -51,6 +51,8 @@ public class AudioService extends MediaBrowserServiceCompat {
 	// considers these keycodes relevant to media playback and will pass them on to us.
 	public static final int KEYCODE_BYPASS_PLAY = KeyEvent.KEYCODE_MUTE;
 	public static final int KEYCODE_BYPASS_PAUSE = KeyEvent.KEYCODE_MEDIA_RECORD;
+	public static final int KEYCODE_BYPASS_NEXT = KeyEvent.KEYCODE_MEDIA_STEP_FORKWARD;
+	public static final int KEYCODE_BYPASS_PREVIOUS = KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD;
 	public static final int MAX_COMPACT_ACTIONS = 3;
 
 	private static volatile boolean running;
@@ -218,6 +220,10 @@ public class AudioService extends MediaBrowserServiceCompat {
 			return KEYCODE_BYPASS_PLAY;
 		} else if (action == PlaybackStateCompat.ACTION_PAUSE) {
 			return KEYCODE_BYPASS_PAUSE;
+		} else if(action == PlaybackStateCompat.ACTION_SKIP_TO_NEXT){
+		    return KEYCODE_BYPASS_NEXT;
+		} else if (action == PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS){
+			return KEYCODE_BYPASS_PREVIOUS;
 		} else {
 			return PlaybackStateCompat.toKeyCode(action);
 		}
@@ -621,6 +627,12 @@ public class AudioService extends MediaBrowserServiceCompat {
 					break;
 				case KEYCODE_BYPASS_PAUSE:
 					onPause();
+					break;
+				case KEYCODE_BYPASS_NEXT:
+					onSkipToNext();
+					break;
+				case KEYCODE_BYPASS_PREVIOUS:
+					onSkipToPrevious();
 					break;
 				case KeyEvent.KEYCODE_MEDIA_STOP:
 					onStop();
