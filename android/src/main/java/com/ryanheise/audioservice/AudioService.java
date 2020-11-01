@@ -51,8 +51,8 @@ public class AudioService extends MediaBrowserServiceCompat {
 	// considers these keycodes relevant to media playback and will pass them on to us.
 	public static final int KEYCODE_BYPASS_PLAY = KeyEvent.KEYCODE_MUTE;
 	public static final int KEYCODE_BYPASS_PAUSE = KeyEvent.KEYCODE_MEDIA_RECORD;
-	public static final int KEYCODE_BYPASS_NEXT = KeyEvent.KEYCODE_MEDIA_STEP_FORWARD;
-	public static final int KEYCODE_BYPASS_PREVIOUS = KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD;
+	public static final int KEYCODE_BYPASS_NEXT = KeyEvent.KEYCODE_MEDIA_CLOSE;
+	public static final int KEYCODE_BYPASS_PREVIOUS = KeyEvent.KEYCODE_MEDIA_EJECT;
 	public static final int MAX_COMPACT_ACTIONS = 3;
 
 	private static volatile boolean running;
