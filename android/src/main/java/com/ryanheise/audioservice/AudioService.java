@@ -617,11 +617,8 @@ public class AudioService extends MediaBrowserServiceCompat {
 			if (event.getEventTime() > 0 || event.getDownTime() > 0){
 				if (event.getAction() == KeyEvent.ACTION_DOWN) {
 					switch (event.getKeyCode()) {
-					case KEYCODE_BYPASS_PLAY:
-						onPlay();
-						break;
-					case KEYCODE_BYPASS_PAUSE:
-						onPause();
+					case KeyEvent.KEYCODE_MEDIA_STOP:
+						onStop();
 						break;
 					case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
 						onFastForward();
@@ -670,6 +667,9 @@ public class AudioService extends MediaBrowserServiceCompat {
 						break;
 					case KeyEvent.KEYCODE_MEDIA_REWIND:
 						onRewind();
+						break;
+					case KeyEvent.KEYCODE_MEDIA_STOP:
+						onStop();
 						break;
 					}
 				}
