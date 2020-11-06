@@ -28,6 +28,7 @@ import android.support.v4.media.session.MediaControllerCompat;
 import android.support.v4.media.session.MediaSessionCompat;
 import android.support.v4.media.session.PlaybackStateCompat;
 import android.util.LruCache;
+import android.util.Log;
 import android.view.KeyEvent;
 
 import androidx.annotation.RequiresApi;
@@ -46,11 +47,7 @@ public class AudioService extends MediaBrowserServiceCompat {
 	private static final int NOTIFICATION_ID = 1124;
 	private static final int REQUEST_CONTENT_INTENT = 1000;
 	private static final String MEDIA_ROOT_ID = "root";
-	// See the comment in onMediaButtonEvent to understand how the BYPASS keycodes work.
-	// We hijack KEYCODE_MUTE and KEYCODE_MEDIA_RECORD since the media session subsystem
-	// considers these keycodes relevant to media playback and will pass them on to us.
-	public static final int KEYCODE_BYPASS_PLAY = KeyEvent.KEYCODE_MUTE;
-	public static final int KEYCODE_BYPASS_PAUSE = KeyEvent.KEYCODE_MEDIA_RECORD;
+	private static final String TAG = "AudioPlugin";
 	public static final int MAX_COMPACT_ACTIONS = 3;
 
 	private static volatile boolean running;
@@ -78,7 +75,11 @@ public class AudioService extends MediaBrowserServiceCompat {
 	private static int shuffleMode;
 	private static boolean notificationCreated;
 
-	public static void init(Activity activity, boolean resumeOnClick, String androidNotificationChannelName, String androidNotificationChannelDescription, String action, Integer notificationColor, String androidNotificationIcon, boolean androidShowNotificationBadge, boolean androidNotificationClickStartsActivity, boolean androidNotificationOngoing, boolean androidStopForegroundOnPause, Size artDownscaleSize, ServiceListener listener) {
+	public static void init(Activity activity, boolean resumeOnClick, String androidNotificationChannelName,
+			String androidNotificationChannelDescription, String action, Integer notificationColor,
+			String androidNotificationIcon, boolean androidShowNotificationBadge,
+			boolean androidNotificationClickStartsActivity, boolean androidNotificationOngoing,
+			boolean androidStopForegroundOnPause, Size artDownscaleSize, ServiceListener listener) {
 		if (running)
 			throw new IllegalStateException("AudioService already running");
 		running = true;
@@ -86,7 +87,8 @@ public class AudioService extends MediaBrowserServiceCompat {
 		Context context = activity.getApplicationContext();
 		Intent intent = new Intent(context, activity.getClass());
 		intent.setAction(action);
-		contentIntent = PendingIntent.getActivity(context, REQUEST_CONTENT_INTENT, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+		contentIntent = PendingIntent.getActivity(context, REQUEST_CONTENT_INTENT, intent,
+				PendingIntent.FLAG_UPDATE_CURRENT);
 		AudioService.listener = listener;
 		AudioService.resumeOnClick = resumeOnClick;
 		AudioService.androidNotificationChannelName = androidNotificationChannelName;
@@ -108,7 +110,7 @@ public class AudioService extends MediaBrowserServiceCompat {
 		// Get max available VM memory, exceeding this amount will throw an
 		// OutOfMemory exception. Stored in kilobytes as LruCache takes an
 		// int in its constructor.
-		final int maxMemory = (int)(Runtime.getRuntime().maxMemory() / 1024);
+		final int maxMemory = (int) (Runtime.getRuntime().maxMemory() / 1024);
 
 		// Use 1/8th of the available memory for this memory cache.
 		final int cacheSize = maxMemory / 8;
@@ -163,8 +165,9 @@ public class AudioService extends MediaBrowserServiceCompat {
 		stopSelf();
 		// This still does not solve the Android 11 problem.
 		// if (notificationCreated) {
-		// 	NotificationManager notificationManager = (NotificationManager)getSystemService(Context.NOTIFICATION_SERVICE);
-		// 	notificationManager.cancel(NOTIFICATION_ID);
+		// NotificationManager notificationManager =
+		// (NotificationManager)getSystemService(Context.NOTIFICATION_SERVICE);
+		// notificationManager.cancel(NOTIFICATION_ID);
 		// }
 		notificationCreated = false;
 	}
@@ -193,17 +196,16 @@ public class AudioService extends MediaBrowserServiceCompat {
 
 	NotificationCompat.Action action(String resource, String label, long actionCode) {
 		int iconId = getResourceId(resource);
-		return new NotificationCompat.Action(iconId, label,
-				buildMediaButtonPendingIntent(actionCode));
+		return new NotificationCompat.Action(iconId, label, buildMediaButtonPendingIntent(actionCode));
 	}
 
 	PendingIntent buildMediaButtonPendingIntent(long action) {
-		int keyCode = toKeyCode(action);
+		int keyCode = PlaybackStateCompat.toKeyCode(action);
 		if (keyCode == KeyEvent.KEYCODE_UNKNOWN)
 			return null;
 		Intent intent = new Intent(this, MediaButtonReceiver.class);
 		intent.setAction(Intent.ACTION_MEDIA_BUTTON);
-		intent.putExtra(Intent.EXTRA_KEY_EVENT, new KeyEvent(KeyEvent.ACTION_DOWN, keyCode));
+		intent.putExtra(Intent.EXTRA_KEY_EVENT, new KeyEvent(-1, 0, KeyEvent.ACTION_DOWN, keyCode, 0));
 		return PendingIntent.getBroadcast(this, keyCode, intent, 0);
 	}
 
@@ -213,17 +215,10 @@ public class AudioService extends MediaBrowserServiceCompat {
 		return PendingIntent.getBroadcast(this, 0, intent, 0);
 	}
 
-	public static int toKeyCode(long action) {
-		if (action == PlaybackStateCompat.ACTION_PLAY) {
-			return KEYCODE_BYPASS_PLAY;
-		} else if (action == PlaybackStateCompat.ACTION_PAUSE) {
-			return KEYCODE_BYPASS_PAUSE;
-		} else {
-			return PlaybackStateCompat.toKeyCode(action);
-		}
-	}
 
-	void setState(List<NotificationCompat.Action> actions, int actionBits, int[] compactActionIndices, AudioProcessingState processingState, boolean playing, long position, long bufferedPosition, float speed, long updateTime, int repeatMode, int shuffleMode) {
+	void setState(List<NotificationCompat.Action> actions, int actionBits, int[] compactActionIndices,
+			AudioProcessingState processingState, boolean playing, long position, long bufferedPosition, float speed,
+			long updateTime, int repeatMode, int shuffleMode) {
 		this.actions = actions;
 		this.compactActionIndices = compactActionIndices;
 		boolean wasPlaying = AudioService.playing;
@@ -234,11 +229,11 @@ public class AudioService extends MediaBrowserServiceCompat {
 
 		PlaybackStateCompat.Builder stateBuilder = new PlaybackStateCompat.Builder()
 				.setActions(PlaybackStateCompat.ACTION_PLAY_PAUSE | actionBits)
-				.setState(getPlaybackState(), position, speed, updateTime)
-				.setBufferedPosition(bufferedPosition);
+				.setState(getPlaybackState(), position, speed, updateTime).setBufferedPosition(bufferedPosition);
 		mediaSession.setPlaybackState(stateBuilder.build());
 
-		if (!running) return;
+		if (!running)
+			return;
 
 		if (!wasPlaying && playing) {
 			enterPlayingState();
@@ -251,19 +246,32 @@ public class AudioService extends MediaBrowserServiceCompat {
 
 	public int getPlaybackState() {
 		switch (processingState) {
-		case none: return PlaybackStateCompat.STATE_NONE;
-		case connecting: return PlaybackStateCompat.STATE_CONNECTING;
-		case ready: return playing ? PlaybackStateCompat.STATE_PLAYING : PlaybackStateCompat.STATE_PAUSED;
-		case buffering: return PlaybackStateCompat.STATE_BUFFERING;
-		case fastForwarding: return PlaybackStateCompat.STATE_FAST_FORWARDING;
-		case rewinding: return PlaybackStateCompat.STATE_REWINDING;
-		case skippingToPrevious: return PlaybackStateCompat.STATE_SKIPPING_TO_PREVIOUS;
-		case skippingToNext: return PlaybackStateCompat.STATE_SKIPPING_TO_NEXT;
-		case skippingToQueueItem: return PlaybackStateCompat.STATE_SKIPPING_TO_QUEUE_ITEM;
-		case completed: return playing ? PlaybackStateCompat.STATE_PLAYING : PlaybackStateCompat.STATE_PAUSED;
-		case stopped: return PlaybackStateCompat.STATE_STOPPED;
-		case error: return PlaybackStateCompat.STATE_ERROR;
-		default: return PlaybackStateCompat.STATE_NONE;
+			case none:
+				return PlaybackStateCompat.STATE_NONE;
+			case connecting:
+				return PlaybackStateCompat.STATE_CONNECTING;
+			case ready:
+				return playing ? PlaybackStateCompat.STATE_PLAYING : PlaybackStateCompat.STATE_PAUSED;
+			case buffering:
+				return PlaybackStateCompat.STATE_BUFFERING;
+			case fastForwarding:
+				return PlaybackStateCompat.STATE_FAST_FORWARDING;
+			case rewinding:
+				return PlaybackStateCompat.STATE_REWINDING;
+			case skippingToPrevious:
+				return PlaybackStateCompat.STATE_SKIPPING_TO_PREVIOUS;
+			case skippingToNext:
+				return PlaybackStateCompat.STATE_SKIPPING_TO_NEXT;
+			case skippingToQueueItem:
+				return PlaybackStateCompat.STATE_SKIPPING_TO_QUEUE_ITEM;
+			case completed:
+				return playing ? PlaybackStateCompat.STATE_PLAYING : PlaybackStateCompat.STATE_PAUSED;
+			case stopped:
+				return PlaybackStateCompat.STATE_STOPPED;
+			case error:
+				return PlaybackStateCompat.STATE_ERROR;
+			default:
+				return PlaybackStateCompat.STATE_NONE;
 		}
 	}
 
@@ -271,7 +279,8 @@ public class AudioService extends MediaBrowserServiceCompat {
 		int[] compactActionIndices = this.compactActionIndices;
 		if (compactActionIndices == null) {
 			compactActionIndices = new int[Math.min(MAX_COMPACT_ACTIONS, actions.size())];
-			for (int i = 0; i < compactActionIndices.length; i++) compactActionIndices[i] = i;
+			for (int i = 0; i < compactActionIndices.length; i++)
+				compactActionIndices[i] = i;
 		}
 		NotificationCompat.Builder builder = getNotificationBuilder();
 		if (mediaMetadata != null) {
@@ -292,12 +301,9 @@ public class AudioService extends MediaBrowserServiceCompat {
 		for (NotificationCompat.Action action : actions) {
 			builder.addAction(action);
 		}
-		builder.setStyle(new MediaStyle()
-				.setMediaSession(mediaSession.getSessionToken())
-				.setShowActionsInCompactView(compactActionIndices)
-				.setShowCancelButton(true)
-				.setCancelButtonIntent(buildMediaButtonPendingIntent(PlaybackStateCompat.ACTION_STOP))
-		);
+		builder.setStyle(new MediaStyle().setMediaSession(mediaSession.getSessionToken())
+				.setShowActionsInCompactView(compactActionIndices).setShowCancelButton(true)
+				.setCancelButtonIntent(buildMediaButtonPendingIntent(PlaybackStateCompat.ACTION_STOP)));
 		if (androidNotificationOngoing)
 			builder.setOngoing(true);
 		Notification notification = builder.build();
@@ -310,28 +316,26 @@ public class AudioService extends MediaBrowserServiceCompat {
 			if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
 				createChannel();
 			int iconId = getResourceId(androidNotificationIcon);
-			notificationBuilder = new NotificationCompat.Builder(this, notificationChannelId)
-					.setSmallIcon(iconId)
-					.setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-					.setShowWhen(false)
-					.setDeleteIntent(buildDeletePendingIntent())
-			;
+			notificationBuilder = new NotificationCompat.Builder(this, notificationChannelId).setSmallIcon(iconId)
+					.setVisibility(NotificationCompat.VISIBILITY_PUBLIC).setShowWhen(false)
+					.setDeleteIntent(buildDeletePendingIntent());
 		}
 		return notificationBuilder;
 	}
 
 	public void handleDeleteNotification() {
-		if (listener == null) return;
+		if (listener == null)
+			return;
 		listener.onClose();
 	}
 
-
 	@RequiresApi(Build.VERSION_CODES.O)
 	private void createChannel() {
-		NotificationManager notificationManager = (NotificationManager)getSystemService(Context.NOTIFICATION_SERVICE);
+		NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
 		NotificationChannel channel = notificationManager.getNotificationChannel(notificationChannelId);
 		if (channel == null) {
-			channel = new NotificationChannel(notificationChannelId, androidNotificationChannelName, NotificationManager.IMPORTANCE_LOW);
+			channel = new NotificationChannel(notificationChannelId, androidNotificationChannelName,
+					NotificationManager.IMPORTANCE_LOW);
 			channel.setShowBadge(androidShowNotificationBadge);
 			if (androidNotificationChannelDescription != null)
 				channel.setDescription(androidNotificationChannelDescription);
@@ -340,8 +344,9 @@ public class AudioService extends MediaBrowserServiceCompat {
 	}
 
 	private void updateNotification() {
-		if (!notificationCreated) return;
-		NotificationManager notificationManager = (NotificationManager)getSystemService(Context.NOTIFICATION_SERVICE);
+		if (!notificationCreated)
+			return;
+		NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
 		notificationManager.notify(NOTIFICATION_ID, buildNotification());
 	}
 
@@ -382,7 +387,9 @@ public class AudioService extends MediaBrowserServiceCompat {
 			wakeLock.release();
 	}
 
-	static MediaMetadataCompat createMediaMetadata(String mediaId, String album, String title, String artist, String genre, Long duration, String artUri, Boolean playable, String displayTitle, String displaySubtitle, String displayDescription, RatingCompat rating, Map<?, ?> extras) {
+	static MediaMetadataCompat createMediaMetadata(String mediaId, String album, String title, String artist,
+			String genre, Long duration, String artUri, Boolean playable, String displayTitle, String displaySubtitle,
+			String displayDescription, RatingCompat rating, Map<?, ?> extras) {
 		MediaMetadataCompat.Builder builder = new MediaMetadataCompat.Builder()
 				.putString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID, mediaId)
 				.putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album)
@@ -397,7 +404,7 @@ public class AudioService extends MediaBrowserServiceCompat {
 			builder.putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON_URI, artUri);
 			String artCacheFilePath = null;
 			if (extras != null) {
-				artCacheFilePath = (String)extras.get("artCacheFile");
+				artCacheFilePath = (String) extras.get("artCacheFile");
 			}
 			if (artCacheFilePath != null) {
 				Bitmap bitmap = loadArtBitmapFromFile(artCacheFilePath);
@@ -420,16 +427,16 @@ public class AudioService extends MediaBrowserServiceCompat {
 		}
 		if (extras != null) {
 			for (Object o : extras.keySet()) {
-				String key = (String)o;
+				String key = (String) o;
 				Object value = extras.get(key);
 				if (value instanceof Long) {
-					builder.putLong("extra_long_" + key, (Long)value);
+					builder.putLong("extra_long_" + key, (Long) value);
 				} else if (value instanceof Integer) {
-					builder.putLong("extra_long_" + key, (Integer)value);
+					builder.putLong("extra_long_" + key, (Integer) value);
 				} else if (value instanceof String) {
-					builder.putString("extra_string_" + key, (String)value);
+					builder.putString("extra_string_" + key, (String) value);
 				} else if (value instanceof Boolean) {
-					builder.putLong("extra_boolean_" + key, (Boolean)value ? 1 : 0);
+					builder.putLong("extra_boolean_" + key, (Boolean) value ? 1 : 0);
 				} else if (value instanceof Double) {
 					builder.putString("extra_double_" + key, value.toString());
 				}
@@ -452,7 +459,8 @@ public class AudioService extends MediaBrowserServiceCompat {
 
 		mediaSession = new MediaSessionCompat(this, "media-session");
 		mediaSession.setMediaButtonReceiver(null); // TODO: Make this configurable
-		mediaSession.setFlags(MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS | MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS);
+		mediaSession.setFlags(
+				MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS | MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS);
 		PlaybackStateCompat.Builder stateBuilder = new PlaybackStateCompat.Builder()
 				.setActions(PlaybackStateCompat.ACTION_PLAY);
 		mediaSession.setPlaybackState(stateBuilder.build());
@@ -460,12 +468,13 @@ public class AudioService extends MediaBrowserServiceCompat {
 		setSessionToken(mediaSession.getSessionToken());
 		mediaSession.setQueue(queue);
 
-		PowerManager pm = (PowerManager)getSystemService(Context.POWER_SERVICE);
+		PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
 		wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, AudioService.class.getName());
 	}
 
 	void enableQueue() {
-		mediaSession.setFlags(MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS | MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS | MediaSessionCompat.FLAG_HANDLES_QUEUE_COMMANDS);
+		mediaSession.setFlags(MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS
+				| MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS | MediaSessionCompat.FLAG_HANDLES_QUEUE_COMMANDS);
 	}
 
 	void setQueue(List<MediaSessionCompat.QueueItem> queue) {
@@ -485,7 +494,8 @@ public class AudioService extends MediaBrowserServiceCompat {
 
 	static Bitmap loadArtBitmapFromFile(String path) {
 		Bitmap bitmap = artBitmapCache.get(path);
-		if (bitmap != null) return bitmap;
+		if (bitmap != null)
+			return bitmap;
 		try {
 			if (artDownscaleSize != null) {
 				BitmapFactory.Options options = new BitmapFactory.Options();
@@ -516,8 +526,7 @@ public class AudioService extends MediaBrowserServiceCompat {
 		if (height > reqHeight || width > reqWidth) {
 			final int halfHeight = height / 2;
 			final int halfWidth = width / 2;
-			while ((halfHeight / inSampleSize) >= reqHeight
-					&& (halfWidth / inSampleSize) >= reqWidth) {
+			while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
 				inSampleSize *= 2;
 			}
 		}
@@ -566,25 +575,29 @@ public class AudioService extends MediaBrowserServiceCompat {
 	public class MediaSessionCallback extends MediaSessionCompat.Callback {
 		@Override
 		public void onAddQueueItem(MediaDescriptionCompat description) {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			listener.onAddQueueItem(getMediaMetadata(description.getMediaId()));
 		}
 
 		@Override
 		public void onAddQueueItem(MediaDescriptionCompat description, int index) {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			listener.onAddQueueItemAt(getMediaMetadata(description.getMediaId()), index);
 		}
 
 		@Override
 		public void onRemoveQueueItem(MediaDescriptionCompat description) {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			listener.onRemoveQueueItem(getMediaMetadata(description.getMediaId()));
 		}
 
 		@Override
 		public void onPrepare() {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			if (!mediaSession.isActive())
 				mediaSession.setActive(true);
 			listener.onPrepare();
@@ -592,13 +605,15 @@ public class AudioService extends MediaBrowserServiceCompat {
 
 		@Override
 		public void onPlay() {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			listener.onPlay();
 		}
 
 		@Override
 		public void onPrepareFromMediaId(String mediaId, Bundle extras) {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			if (!mediaSession.isActive())
 				mediaSession.setActive(true);
 			listener.onPrepareFromMediaId(mediaId);
@@ -606,71 +621,63 @@ public class AudioService extends MediaBrowserServiceCompat {
 
 		@Override
 		public void onPlayFromMediaId(final String mediaId, final Bundle extras) {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			listener.onPlayFromMediaId(mediaId);
 		}
 
 		@Override
 		public boolean onMediaButtonEvent(Intent mediaButtonEvent) {
-			if (listener == null) return false;
-			final KeyEvent event = (KeyEvent)mediaButtonEvent.getExtras().get(Intent.EXTRA_KEY_EVENT);
-			if (event.getEventTime() > 0 || event.getDownTime() > 0){
-				if (event.getAction() == KeyEvent.ACTION_DOWN) {
+			if (listener == null)
+				return false;
+			final KeyEvent event = (KeyEvent) mediaButtonEvent.getExtras().get(Intent.EXTRA_KEY_EVENT);
+			Log.d(TAG, event.toString());
+			if (event.getAction() == KeyEvent.ACTION_DOWN) {
+				if (event.getDownTime() > -1) {
 					switch (event.getKeyCode()) {
-					case KeyEvent.KEYCODE_MEDIA_STOP:
-						onStop();
-						break;
-					case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
-						onFastForward();
-						break;
-					case KeyEvent.KEYCODE_MEDIA_REWIND:
-						onRewind();
-						break;
-					// Android unfortunately reroutes media button clicks to
-					// KEYCODE_MEDIA_PLAY/PAUSE instead of the expected KEYCODE_HEADSETHOOK
-					// or KEYCODE_MEDIA_PLAY_PAUSE. As a result, we can't genuinely tell if
-					// onMediaButtonEvent was called because a media button was actually
-					// pressed or because a PLAY/PAUSE action was pressed instead! To get
-					// around this, we make PLAY and PAUSE actions use different keycodes:
-					// KEYCODE_BYPASS_PLAY/PAUSE. Now if we get KEYCODE_MEDIA_PLAY/PUASE
-					// we know it is actually a media button press.
-					case KeyEvent.KEYCODE_MEDIA_NEXT:
-					case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
-					case KeyEvent.KEYCODE_MEDIA_PLAY:
-					case KeyEvent.KEYCODE_MEDIA_PAUSE:
-						// These are the "genuine" media button click events
-					case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
-					case KeyEvent.KEYCODE_HEADSETHOOK:
-						MediaControllerCompat controller = mediaSession.getController();
-						listener.onClick(mediaControl(event));
-						break;
+						case KeyEvent.KEYCODE_MEDIA_STOP:
+							onStop();
+							break;
+						case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
+							onFastForward();
+							break;
+						case KeyEvent.KEYCODE_MEDIA_REWIND:
+							onRewind();
+							break;
+						case KeyEvent.KEYCODE_MEDIA_NEXT:
+						case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+						case KeyEvent.KEYCODE_MEDIA_PLAY:
+						case KeyEvent.KEYCODE_MEDIA_PAUSE:
+							// These are the "genuine" media button click events
+						case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+						case KeyEvent.KEYCODE_HEADSETHOOK:
+							MediaControllerCompat controller = mediaSession.getController();
+							listener.onClick(mediaControl(event));
+							break;
 					}
-				}
-			}
-				else {
-					if (event.getAction() == KeyEvent.ACTION_DOWN) {
+				} else {
 					switch (event.getKeyCode()) {
-					case KEYCODE_BYPASS_PLAY:
-						onPlay();
-						break;
-				    case KEYCODE_BYPASS_PAUSE:
-						onPause();
-						break;
-					case KeyEvent.KEYCODE_MEDIA_NEXT:
-						onSkipToNext();
-						break;
-					case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
-						onSkipToPrevious();
-						break;
-					case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
-						onFastForward();
-						break;
-					case KeyEvent.KEYCODE_MEDIA_REWIND:
-						onRewind();
-						break;
-					case KeyEvent.KEYCODE_MEDIA_STOP:
-						onStop();
-						break;
+						case KeyEvent.KEYCODE_MEDIA_PLAY:
+							onPlay();
+							break;
+						case KeyEvent.KEYCODE_MEDIA_PAUSE:
+							onPause();
+							break;
+						case KeyEvent.KEYCODE_MEDIA_NEXT:
+							onSkipToNext();
+							break;
+						case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+							onSkipToPrevious();
+							break;
+						case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
+							onFastForward();
+							break;
+						case KeyEvent.KEYCODE_MEDIA_REWIND:
+							onRewind();
+							break;
+						case KeyEvent.KEYCODE_MEDIA_STOP:
+							onStop();
+							break;
 					}
 				}
 			}
@@ -679,88 +686,100 @@ public class AudioService extends MediaBrowserServiceCompat {
 
 		private MediaControl mediaControl(KeyEvent event) {
 			switch (event.getKeyCode()) {
-			case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
-			case KeyEvent.KEYCODE_HEADSETHOOK:
-				return MediaControl.media;
-			case KeyEvent.KEYCODE_MEDIA_NEXT:
-				return MediaControl.next;
-			case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
-				return MediaControl.previous;
-			default:
-				return MediaControl.media;
+				case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+				case KeyEvent.KEYCODE_HEADSETHOOK:
+					return MediaControl.media;
+				case KeyEvent.KEYCODE_MEDIA_NEXT:
+					return MediaControl.next;
+				case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+					return MediaControl.previous;
+				default:
+					return MediaControl.media;
 			}
 		}
 
 		@Override
 		public void onPause() {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			listener.onPause();
 		}
 
 		@Override
 		public void onStop() {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			listener.onStop();
 		}
 
 		@Override
 		public void onSkipToNext() {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			MediaControllerCompat controller = mediaSession.getController();
 			listener.onSkipToNext();
 		}
 
 		@Override
 		public void onSkipToPrevious() {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			listener.onSkipToPrevious();
 		}
 
 		@Override
 		public void onFastForward() {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			listener.onFastForward();
 		}
 
 		@Override
 		public void onRewind() {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			listener.onRewind();
 		}
 
 		@Override
 		public void onSkipToQueueItem(long id) {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			listener.onSkipToQueueItem(id);
 		}
 
 		@Override
 		public void onSeekTo(long pos) {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			listener.onSeekTo(pos);
 		}
 
 		@Override
 		public void onSetRating(RatingCompat rating) {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			listener.onSetRating(rating);
 		}
 
 		@Override
 		public void onSetRepeatMode(int repeatMode) {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			listener.onSetRepeatMode(repeatMode);
 		}
 
 		@Override
 		public void onSetShuffleMode(int shuffleMode) {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			listener.onSetShuffleMode(shuffleMode);
 		}
 
 		@Override
 		public void onSetRating(RatingCompat rating, Bundle extras) {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			listener.onSetRating(rating, extras);
 		}
 
@@ -769,7 +788,8 @@ public class AudioService extends MediaBrowserServiceCompat {
 		//
 
 		public void onPlayMediaItem(final MediaDescriptionCompat description) {
-			if (listener == null) return;
+			if (listener == null)
+				return;
 			listener.onPlayMediaItem(getMediaMetadata(description.getMediaId()));
 		}
 	}
@@ -783,14 +803,14 @@ public class AudioService extends MediaBrowserServiceCompat {
 
 		void onPrepareFromMediaId(String mediaId);
 
-		//void onPrepareFromSearch(String query);
-		//void onPrepareFromUri(String uri);
+		// void onPrepareFromSearch(String query);
+		// void onPrepareFromUri(String uri);
 		void onPlay();
 
 		void onPlayFromMediaId(String mediaId);
 
-		//void onPlayFromSearch(String query, Map<?,?> extras);
-		//void onPlayFromUri(String uri, Map<?,?> extras);
+		// void onPlayFromSearch(String query, Map<?,?> extras);
+		// void onPlayFromUri(String uri, Map<?,?> extras);
 		void onSkipToQueueItem(long id);
 
 		void onPause();
@@ -815,11 +835,11 @@ public class AudioService extends MediaBrowserServiceCompat {
 
 		void onSetRepeatMode(int repeatMode);
 
-		//void onSetShuffleModeEnabled(boolean enabled);
+		// void onSetShuffleModeEnabled(boolean enabled);
 
 		void onSetShuffleMode(int shuffleMode);
 
-		//void onCustomAction(String action, Bundle extras);
+		// void onCustomAction(String action, Bundle extras);
 
 		void onAddQueueItem(MediaMetadataCompat metadata);
 
